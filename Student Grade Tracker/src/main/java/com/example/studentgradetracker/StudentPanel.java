@@ -1,4 +1,4 @@
-package com.studentportal;
+package com.example.demo;
 
 import javafx.application.Application;
 import javafx.beans.property.SimpleStringProperty;
@@ -11,15 +11,15 @@ import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
-import java.io.PrintWriter;
+import java.io.FileWriter;
 import java.sql.*;
 
 public class StudentPanel extends Application {
 
-    // ===== SUBJECT MODEL =====
     public static class Subject {
         private final String code;
         private final String name;
@@ -39,11 +39,10 @@ public class StudentPanel extends Application {
         public String getGrade() { return grade; }
     }
 
-    // ===== DATABASE HANDLER =====
     public static class DatabaseHandler {
         private static final String URL = "jdbc:mysql://localhost:3306/grade_tracker";
         private static final String USER = "root";
-        private static final String PASSWORD = "password"; // <-- change if needed
+        private static final String PASSWORD = "password"; // Change if needed
 
         private Connection connect() throws SQLException {
             return DriverManager.getConnection(URL, USER, PASSWORD);
@@ -51,8 +50,7 @@ public class StudentPanel extends Application {
 
         public ObservableList<Subject> getSubjects(String studentId, int semester) {
             ObservableList<Subject> subjects = FXCollections.observableArrayList();
-            String query = "SELECT subject_code, subject_name, credits, grade FROM subjects " +
-                    "WHERE student_id=? AND semester=?";
+            String query = "SELECT subject_code, subject_name, credits, grade FROM subjects WHERE student_id=? AND semester=?";
             try (Connection conn = connect();
                  PreparedStatement stmt = conn.prepareStatement(query)) {
 
@@ -61,7 +59,6 @@ public class StudentPanel extends Application {
                 ResultSet rs = stmt.executeQuery();
 
                 while (rs.next()) {
-                    System.out.println("Loaded subject: " + rs.getString("subject_code"));
                     subjects.add(new Subject(
                             rs.getString("subject_code"),
                             rs.getString("subject_name"),
@@ -69,7 +66,6 @@ public class StudentPanel extends Application {
                             rs.getString("grade")
                     ));
                 }
-                System.out.println("Total subjects loaded = " + subjects.size());
             } catch (SQLException e) {
                 e.printStackTrace();
             }
@@ -83,7 +79,9 @@ public class StudentPanel extends Application {
                 stmt.setString(1, studentId);
                 ResultSet rs = stmt.executeQuery();
                 if (rs.next()) return rs.getInt("total");
-            } catch (SQLException e) { e.printStackTrace(); }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
             return 0;
         }
 
@@ -94,7 +92,9 @@ public class StudentPanel extends Application {
                 stmt.setString(1, studentId);
                 ResultSet rs = stmt.executeQuery();
                 if (rs.next()) return rs.getInt("sems");
-            } catch (SQLException e) { e.printStackTrace(); }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
             return 0;
         }
 
@@ -118,7 +118,9 @@ public class StudentPanel extends Application {
                 }
                 if (totalCredits == 0) return 0;
                 return (double) weightedPoints / totalCredits;
-            } catch (SQLException e) { e.printStackTrace(); }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
             return 0;
         }
 
@@ -141,7 +143,9 @@ public class StudentPanel extends Application {
                 }
                 if (totalCredits == 0) return 0;
                 return (double) weightedPoints / totalCredits;
-            } catch (SQLException e) { e.printStackTrace(); }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
             return 0;
         }
 
@@ -160,12 +164,12 @@ public class StudentPanel extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        String studentId = "S1001"; // demo student
+        String studentId = "S1001"; // Example student ID
         DatabaseHandler db = new DatabaseHandler();
 
         primaryStage.setTitle("Grade Tracker - Student Panel");
 
-        // ===== TOP BAR =====
+        // TOP BAR
         HBox topBar = new HBox(20);
         topBar.setPadding(new Insets(15));
         topBar.setStyle("-fx-background-color: #1E293B;");
@@ -185,7 +189,7 @@ public class StudentPanel extends Application {
 
         topBar.getChildren().addAll(title, spacer, downloadBtn, studentLabel);
 
-        // ===== STUDENT INFO =====
+        // STUDENT INFO
         VBox studentInfo = new VBox(5);
         studentInfo.setPadding(new Insets(20));
         studentInfo.setStyle("-fx-background-color: #334155; -fx-background-radius: 12;");
@@ -201,7 +205,7 @@ public class StudentPanel extends Application {
 
         studentInfo.getChildren().addAll(cgpaLbl);
 
-        // ===== SEMESTER SELECTOR =====
+        // SEMESTER SELECTOR
         HBox semesterBox = new HBox(10);
         semesterBox.setAlignment(Pos.CENTER_LEFT);
         semesterBox.setPadding(new Insets(10));
@@ -218,7 +222,7 @@ public class StudentPanel extends Application {
 
         semesterBox.getChildren().addAll(semLabel, semSelector, sgpaLbl);
 
-        // ===== SUBJECT TABLE =====
+        // SUBJECT TABLE
         TableView<Subject> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         table.setStyle("-fx-background-color: #1E293B; -fx-background-radius: 10;");
@@ -237,7 +241,6 @@ public class StudentPanel extends Application {
 
         table.getColumns().addAll(codeCol, nameCol, creditsCol, gradeCol);
 
-        // load semester 1 data
         table.setItems(db.getSubjects(studentId, 1));
 
         semSelector.setOnAction(e -> {
@@ -249,7 +252,61 @@ public class StudentPanel extends Application {
         VBox semesterSection = new VBox(10, semesterBox, table);
         semesterSection.setPadding(new Insets(15));
 
-        // ===== ROOT LAYOUT =====
+        // DOWNLOAD REPORT BUTTON ACTION
+        downloadBtn.setOnAction(e -> {
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.setTitle("Save Report As");
+            fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
+            fileChooser.setInitialFileName("StudentReport.csv");
+
+            File file = fileChooser.showSaveDialog(primaryStage);
+
+            if (file != null) {
+                try (Connection conn = DriverManager.getConnection(DatabaseHandler.URL, DatabaseHandler.USER, DatabaseHandler.PASSWORD);
+                     PreparedStatement stmt = conn.prepareStatement("SELECT semester, subject_code, subject_name, credits, grade FROM subjects WHERE student_id = ?")) {
+
+                    stmt.setString(1, studentId);
+                    ResultSet rs = stmt.executeQuery();
+
+                    try (FileWriter writer = new FileWriter(file)) {
+                        // Write student details header
+                        writer.write("Student ID:," + studentId + "\n");
+                        writer.write("Total Credits:," + totalCredits + "\n");
+                        writer.write("Total Semesters:," + totalSemesters + "\n");
+                        writer.write("CGPA:," + String.format("%.2f", cgpa) + "\n");
+                        writer.write("\n");
+
+                        // Column headers
+                        writer.write("Semester,Subject Code,Subject Name,Credits,Grade\n");
+
+                        while (rs.next()) {
+                            writer.write(rs.getInt("semester") + "," +
+                                    rs.getString("subject_code") + "," +
+                                    rs.getString("subject_name") + "," +
+                                    rs.getInt("credits") + "," +
+                                    rs.getString("grade") + "\n");
+                        }
+                    }
+
+                    Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                    alert.setTitle("Report Saved");
+                    alert.setHeaderText("Report successfully generated!");
+                    alert.setContentText("Saved at:\n" + file.getAbsolutePath());
+                    alert.getDialogPane().setMinHeight(Region.USE_PREF_SIZE);
+                    alert.showAndWait();
+
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setTitle("Error");
+                    alert.setHeaderText("Failed to generate report");
+                    alert.setContentText(ex.getMessage());
+                    alert.showAndWait();
+                }
+            }
+        });
+
+        // ROOT LAYOUT
         VBox root = new VBox(15, topBar, studentInfo, semesterSection);
         root.setPadding(new Insets(10));
         root.setStyle("-fx-background-color: #0F172A;");

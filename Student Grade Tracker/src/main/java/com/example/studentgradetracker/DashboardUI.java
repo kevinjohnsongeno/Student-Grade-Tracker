@@ -1,29 +1,32 @@
+package com.example.demo;
+
 import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.chart.*;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.*;
 import javafx.scene.text.Font;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
+import java.io.File;
 import java.io.FileWriter;
 import java.sql.*;
 
 public class DashboardUI extends Application {
 
-    // ====== DATABASE CONFIG ======
     private static final String URL = "jdbc:mysql://localhost:3306/grade_tracker";
     private static final String USER = "root";
-    private static final String PASS = "password"; // change this
+    private static final String PASS = "password"; // Update as needed
 
     private Connection getConnection() throws SQLException {
         return DriverManager.getConnection(URL, USER, PASS);
     }
 
-    // ====== FETCH DATA METHODS ======
     private int getTotalStudents() {
         String sql = "SELECT COUNT(DISTINCT student_id) FROM subjects";
         try (Connection conn = getConnection();
@@ -59,7 +62,7 @@ public class DashboardUI extends Application {
             SELECT AVG(student_gpa) AS avg_cgpa
             FROM (
                 SELECT student_id,
-                       SUM(credits * 
+                       SUM(credits *
                            CASE grade
                                WHEN 'A+' THEN 10
                                WHEN 'A'  THEN 9
@@ -82,7 +85,6 @@ public class DashboardUI extends Application {
         return 0;
     }
 
-    // ====== UI START ======
     private BorderPane root;
 
     @Override
@@ -115,10 +117,8 @@ public class DashboardUI extends Application {
         appTitle.setStyle("-fx-text-fill: white; -fx-font-size: 18px; -fx-font-weight: bold;");
 
         VBox navBox = new VBox(10,
-                createSidebarBtn("Dashboard", true), // mark Dashboard as active
-                createSidebarBtn("Students", false),
-                createSidebarBtn("Semesters & Subjects", false),
-                createSidebarBtn("Grades", false),
+                createSidebarBtn("Dashboard", true),
+                createSidebarBtn("Manage", false),
                 createSidebarBtn("Reports", false),
                 createSidebarBtn("Settings", false)
         );
@@ -180,17 +180,14 @@ public class DashboardUI extends Application {
         grid.setHgap(20);
         grid.setVgap(20);
 
-        // Info cards
         grid.add(createInfoCard(String.valueOf(getTotalStudents()), "Total Students", ""), 0, 0);
         grid.add(createInfoCard(String.valueOf(getActiveSemesters()), "Active Semesters", ""), 1, 0);
         grid.add(createInfoCard(String.valueOf(getTotalSubjects()), "Total Subjects", ""), 2, 0);
         grid.add(createInfoCard(String.format("%.2f", getAverageCGPA()), "Average CGPA", ""), 3, 0);
 
-        // Charts
         grid.add(createLineChart(), 0, 1, 2, 1);
         grid.add(createBarChart(), 2, 1, 2, 1);
 
-        // Bottom row cards
         grid.add(createTopPerformersCard(), 0, 2, 2, 1);
         grid.add(createRecentActivityCard(), 2, 2, 2, 1);
 
@@ -219,6 +216,7 @@ public class DashboardUI extends Application {
         NumberAxis yAxis = new NumberAxis();
         LineChart<String, Number> lineChart = new LineChart<>(xAxis, yAxis);
         lineChart.setTitle("Student Enrollment Trend");
+        lineChart.setLegendVisible(false);
 
         XYChart.Series<String, Number> series = new XYChart.Series<>();
         String sql = "SELECT semester, COUNT(DISTINCT student_id) AS total_students FROM subjects GROUP BY semester ORDER BY semester";
@@ -243,6 +241,7 @@ public class DashboardUI extends Application {
         NumberAxis yAxis = new NumberAxis();
         BarChart<String, Number> barChart = new BarChart<>(xAxis, yAxis);
         barChart.setTitle("Grade Distribution");
+        barChart.setLegendVisible(false);
 
         XYChart.Series<String, Number> series = new XYChart.Series<>();
         String sql = "SELECT grade, COUNT(*) AS count FROM subjects GROUP BY grade";
@@ -352,26 +351,114 @@ public class DashboardUI extends Application {
     }
 
     private void generateReport() {
-        String sql = "SELECT student_id, semester, subject_code, subject_name, credits, grade FROM subjects";
-        try (Connection conn = getConnection();
-             Statement st = conn.createStatement();
-             ResultSet rs = st.executeQuery(sql);
-             FileWriter writer = new FileWriter("StudentReport.csv")) {
+        String studentQuery = "SELECT DISTINCT student_id FROM subjects";
 
-            writer.write("StudentID,Semester,SubjectCode,SubjectName,Credits,Grade\n");
-            while (rs.next()) {
-                writer.write(rs.getString("student_id") + "," +
-                        rs.getInt("semester") + "," +
-                        rs.getString("subject_code") + "," +
-                        rs.getString("subject_name") + "," +
-                        rs.getInt("credits") + "," +
-                        rs.getString("grade") + "\n");
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Save Report As");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
+        fileChooser.setInitialFileName("FullStudentReport.csv");
+
+        File file = fileChooser.showSaveDialog(root.getScene().getWindow());
+
+        if (file != null) {
+            try (Connection conn = getConnection();
+                 Statement st = conn.createStatement();
+                 ResultSet studentRs = st.executeQuery(studentQuery);
+                 FileWriter writer = new FileWriter(file)) {
+
+                while (studentRs.next()) {
+                    String studentId = studentRs.getString("student_id");
+
+                    // --- total credits ---
+                    int totalCredits = 0;
+                    String totalCreditsSql = "SELECT SUM(credits) AS total FROM subjects WHERE student_id = ?";
+                    try (PreparedStatement ps = conn.prepareStatement(totalCreditsSql)) {
+                        ps.setString(1, studentId);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            if (rs.next()) totalCredits = rs.getInt("total");
+                        }
+                    }
+
+                    // --- total semesters ---
+                    int totalSemesters = 0;
+                    String totalSemSql = "SELECT COUNT(DISTINCT semester) AS sems FROM subjects WHERE student_id = ?";
+                    try (PreparedStatement ps = conn.prepareStatement(totalSemSql)) {
+                        ps.setString(1, studentId);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            if (rs.next()) totalSemesters = rs.getInt("sems");
+                        }
+                    }
+
+                    // --- CGPA ---
+                    double cgpa = 0;
+                    String cgpaSql = """
+                    SELECT SUM(credits * 
+                        CASE grade
+                            WHEN 'A+' THEN 10
+                            WHEN 'A'  THEN 9
+                            WHEN 'B+' THEN 8
+                            WHEN 'B'  THEN 7
+                            WHEN 'C+' THEN 6
+                            WHEN 'C'  THEN 5
+                            ELSE 0
+                        END) / SUM(credits) AS cgpa
+                    FROM subjects
+                    WHERE student_id = ?
+                """;
+                    try (PreparedStatement ps = conn.prepareStatement(cgpaSql)) {
+                        ps.setString(1, studentId);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            if (rs.next()) cgpa = rs.getDouble("cgpa");
+                        }
+                    }
+
+                    // --- write student summary ---
+                    writer.write("Student ID,Total Credits,Total Semesters,CGPA\n");
+                    writer.write(studentId + "," + totalCredits + "," + totalSemesters + "," +
+                            String.format("%.2f", cgpa) + "\n\n");
+
+                    // --- write subjects ---
+                    writer.write("Semester,Subject Code,Subject Name,Credits,Grade\n");
+                    String subjectsSql = "SELECT semester, subject_code, subject_name, credits, grade " +
+                            "FROM subjects WHERE student_id = ? ORDER BY semester";
+                    try (PreparedStatement ps = conn.prepareStatement(subjectsSql)) {
+                        ps.setString(1, studentId);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                writer.write(rs.getInt("semester") + "," +
+                                        rs.getString("subject_code") + "," +
+                                        rs.getString("subject_name") + "," +
+                                        rs.getInt("credits") + "," +
+                                        rs.getString("grade") + "\n");
+                            }
+                        }
+                    }
+
+                    writer.write("\n\n"); // spacing between students
+                }
+
+                // ✅ Success popup with file location
+                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                alert.setTitle("✅ Report Saved Successfully!");
+                alert.setHeaderText("Full student report generated.");
+                alert.setContentText("Saved to:\n" + file.getAbsolutePath());
+                alert.getDialogPane().setMinHeight(Region.USE_PREF_SIZE);
+                alert.showAndWait();
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setTitle("❌ Error");
+                alert.setHeaderText("Report generation failed");
+                alert.setContentText(e.getMessage());
+                alert.getDialogPane().setMinHeight(Region.USE_PREF_SIZE);
+                alert.showAndWait();
             }
-            System.out.println("✅ Report generated: StudentReport.csv");
-        } catch (Exception e) { e.printStackTrace(); }
+        }
     }
 
+
     public static void main(String[] args) {
-        launch(args);
+        launch();
     }
 }
